@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CertWatch — Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #121722;
+    --panel-border: #202838;
+    --text-primary: #e7ecf3;
+    --text-muted: #7c8aa3;
+    --accent-amber: #e8a33d;
+    --accent-teal: #4fb8a8;
+    --accent-blue: #5b8def;
+    --mono: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--sans);
+    padding: 32px;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  h1 .accent { color: var(--accent-amber); }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent-teal);
+    box-shadow: 0 0 0 0 rgba(79,184,168,0.6);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(79,184,168,0.5); }
+    70%  { box-shadow: 0 0 0 6px rgba(79,184,168,0); }
+    100% { box-shadow: 0 0 0 0 rgba(79,184,168,0); }
+  }
+
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 600;
+  }
+
+  .stat-value.amber { color: var(--accent-amber); }
+  .stat-value.teal { color: var(--accent-teal); }
+  .stat-value.blue { color: var(--accent-blue); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  .panel-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-title small {
+    font-family: var(--mono);
+    font-weight: 400;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  canvas { max-height: 260px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  th {
+    text-align: left;
+    color: var(--text-muted);
+    font-weight: 500;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--panel-border);
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+  }
+
+  td {
+    padding: 7px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    color: var(--text-primary);
+  }
+
+  td.muted { color: var(--text-muted); }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    background: rgba(79,184,168,0.12);
+    color: var(--accent-teal);
+  }
+
+  .badge.no { background: rgba(124,138,163,0.12); color: var(--text-muted); }
+
+  .empty-state {
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 24px 0;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Cert<span class="accent">Watch</span></h1>
+  <div class="status"><span class="dot"></span> live &middot; auto-refresh 30s</div>
+</header>
+
+<div class="stat-row">
+  <div class="stat-card">
+    <div class="stat-label">Total domain</div>
+    <div class="stat-value amber" id="stat-total">–</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Domain resolve (7 hari)</div>
+    <div class="stat-value teal" id="stat-resolved">–</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">CMS teratas</div>
+    <div class="stat-value blue" id="stat-top-cms">–</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Domain baru (24 jam)</div>
+    <div class="stat-value amber" id="stat-today">–</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <div class="panel-title">Domain baru per hari <small id="timeline-range">14 hari terakhir</small></div>
+    <canvas id="chart-timeline"></canvas>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Top CMS</div>
+    <canvas id="chart-cms"></canvas>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <div class="panel-title">Server / CDN terdeteksi</div>
+    <canvas id="chart-server"></canvas>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Backend / Framework</div>
+    <canvas id="chart-backend"></canvas>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Domain terbaru</div>
+  <table id="recent-table">
+    <thead>
+      <tr><th>Domain</th><th>Issuer</th><th>Status</th><th>Tech</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script>
+const API = '';
+const palette = ['#e8a33d', '#4fb8a8', '#5b8def', '#c77dff', '#f26b6b', '#8ecae6', '#ffb703', '#94a3b8'];
+
+Chart.defaults.color = '#7c8aa3';
+Chart.defaults.font.family = "'IBM Plex Mono', ui-monospace, monospace";
+Chart.defaults.font.size = 11;
+Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+
+let timelineChart, cmsChart, serverChart, backendChart;
+
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+}
+
+async function fetchJSON(path) {
+  const res = await fetch(API + path);
+  if (!res.ok) throw new Error(`${path} -> HTTP ${res.status}`);
+  return res.json();
+}
+
+function makeBarChart(ctx, labels, data, color) {
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: color, borderRadius: 4, maxBarThickness: 28 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+}
+
+async function loadTimeline() {
+  const rows = await fetchJSON('/stats/timeline?days=14');
+  const labels = rows.map(r => fmtDate(r.day));
+  const totals = rows.map(r => r.total);
+  const resolved = rows.map(r => r.resolved_count);
+
+  if (timelineChart) timelineChart.destroy();
+  timelineChart = new Chart(document.getElementById('chart-timeline'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Total domain', data: totals, borderColor: '#e8a33d', backgroundColor: 'rgba(232,163,61,0.1)', tension: 0.3, fill: true },
+        { label: 'Resolved', data: resolved, borderColor: '#4fb8a8', backgroundColor: 'rgba(79,184,168,0.08)', tension: 0.3, fill: true }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14 } } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+
+  if (totals.length) {
+    const today = totals[totals.length - 1];
+    document.getElementById('stat-today').textContent = today;
+    const resolvedSum = resolved.reduce((a, b) => a + b, 0);
+    document.getElementById('stat-resolved').textContent = resolvedSum;
+  }
+}
+
+async function loadTechBreakdown() {
+  const data = await fetchJSON('/stats/tech-breakdown');
+
+  const cms = data.cms || [];
+  if (cmsChart) cmsChart.destroy();
+  cmsChart = makeBarChart(
+    document.getElementById('chart-cms'),
+    cms.map(r => r.value), cms.map(r => r.jumlah), palette[2]
+  );
+
+  const server = data.server || [];
+  if (serverChart) serverChart.destroy();
+  serverChart = makeBarChart(
+    document.getElementById('chart-server'),
+    server.map(r => r.value), server.map(r => r.jumlah), palette[1]
+  );
+
+  const backend = [...(data.backend || []), ...(data.framework || [])];
+  if (backendChart) backendChart.destroy();
+  backendChart = makeBarChart(
+    document.getElementById('chart-backend'),
+    backend.map(r => r.value), backend.map(r => r.jumlah), palette[0]
+  );
+
+  if (cms.length) {
+    document.getElementById('stat-top-cms').textContent = cms[0].value;
+  }
+}
+
+async function loadStats() {
+  const stats = await fetchJSON('/stats');
+  document.getElementById('stat-total').textContent = stats.total_domains ?? 0;
+}
+
+async function loadRecent() {
+  const rows = await fetchJSON('/domains?limit=15');
+  const tbody = document.querySelector('#recent-table tbody');
+  tbody.innerHTML = '';
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Belum ada data. Jalankan collector & worker.</td></tr>';
+    return;
+  }
+
+  for (const r of rows) {
+    const tech = r.tech_stack ? Object.values(r.tech_stack).join(', ') : '—';
+    const badge = r.resolved
+      ? `<span class="badge">${r.http_status ?? '-'}</span>`
+      : `<span class="badge no">unresolved</span>`;
+    tbody.innerHTML += `
+      <tr>
+        <td>${r.domain}</td>
+        <td class="muted">${r.issuer ?? '—'}</td>
+        <td>${badge}</td>
+        <td class="muted">${tech || '—'}</td>
+      </tr>`;
+  }
+}
+
+async function refreshAll() {
+  try {
+    await Promise.all([loadStats(), loadTimeline(), loadTechBreakdown(), loadRecent()]);
+  } catch (e) {
+    console.error('Gagal memuat data dashboard:', e);
+  }
+}
+
+refreshAll();
+setInterval(refreshAll, 30000);
+</script>
+
+</body>
+</html>
