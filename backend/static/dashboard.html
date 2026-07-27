@@ -188,6 +188,120 @@
     padding: 24px 0;
     text-align: center;
   }
+
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .filter-field label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .filter-field input, .filter-field select {
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 7px 9px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .btn {
+    border: 1px solid var(--panel-border);
+    background: var(--panel);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn:hover { background: rgba(255,255,255,0.06); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn.primary {
+    background: rgba(232,163,61,0.12);
+    border-color: rgba(232,163,61,0.3);
+    color: var(--accent-amber);
+  }
+
+  .btn.primary:hover { background: rgba(232,163,61,0.2); }
+
+  .btn.download {
+    background: rgba(79,184,168,0.12);
+    border-color: rgba(79,184,168,0.3);
+    color: var(--accent-teal);
+    margin-left: auto;
+  }
+
+  .btn.download:hover { background: rgba(79,184,168,0.2); }
+
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+
+  .page-btn {
+    min-width: 30px;
+    text-align: center;
+    border: 1px solid var(--panel-border);
+    background: var(--bg);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 6px 9px;
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .page-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06); }
+  .page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .page-btn.active {
+    background: rgba(232,163,61,0.15);
+    border-color: rgba(232,163,61,0.4);
+    color: var(--accent-amber);
+    font-weight: 600;
+  }
+
+  .page-ellipsis {
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 0 2px;
+  }
+
+  .table-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 10px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 </style>
 </head>
 <body>
@@ -246,6 +360,52 @@
     </thead>
     <tbody></tbody>
   </table>
+</div>
+
+<div class="panel">
+  <div class="panel-title">
+    Data Domain (per tanggal)
+    <small id="data-range-label">semua tanggal</small>
+  </div>
+
+  <div class="filter-bar">
+    <div class="filter-field">
+      <label for="f-date-from">Dari tanggal</label>
+      <input type="date" id="f-date-from">
+    </div>
+    <div class="filter-field">
+      <label for="f-date-to">Sampai tanggal</label>
+      <input type="date" id="f-date-to">
+    </div>
+    <div class="filter-field">
+      <label for="f-tech">Tech (opsional)</label>
+      <input type="text" id="f-tech" placeholder="mis. wordpress">
+    </div>
+    <div class="filter-field">
+      <label for="f-resolved">Resolved saja?</label>
+      <select id="f-resolved">
+        <option value="false">Semua</option>
+        <option value="true">Ya, resolved saja</option>
+      </select>
+    </div>
+    <button class="btn primary" id="btn-apply-filter">Terapkan Filter</button>
+    <button class="btn" id="btn-reset-filter">Reset</button>
+    <button class="btn download" id="btn-download-txt">⬇ Download .txt</button>
+  </div>
+
+  <table id="data-table">
+    <thead>
+      <tr><th>#</th><th>Domain</th><th>Pertama terlihat</th><th>Issuer</th><th>Status</th><th>Tech</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="table-meta">
+    <span id="data-total-label">Total: 0 domain</span>
+    <span id="data-page-label">Halaman 1 dari 1</span>
+  </div>
+
+  <div class="pagination" id="pagination"></div>
 </div>
 
 <script>
@@ -393,6 +553,195 @@ async function refreshAll() {
 
 refreshAll();
 setInterval(refreshAll, 30000);
+
+// ============ Data Domain: filter + pagination + download ============
+const PAGE_SIZE = 20;
+let currentPage = 1;
+let currentTotal = 0;
+let activeFilters = { dateFrom: '', dateTo: '', tech: '', resolvedOnly: false };
+
+function buildQuery(params) {
+  const qs = new URLSearchParams();
+  if (params.dateFrom) qs.set('date_from', params.dateFrom);
+  if (params.dateTo) qs.set('date_to', params.dateTo);
+  if (params.tech) qs.set('tech', params.tech);
+  if (params.resolvedOnly) qs.set('resolved_only', 'true');
+  return qs;
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+async function loadDataTable() {
+  const tbody = document.querySelector('#data-table tbody');
+  tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Memuat data...</td></tr>';
+
+  const qs = buildQuery(activeFilters);
+  const countQs = new URLSearchParams(qs);
+  const listQs = new URLSearchParams(qs);
+  listQs.set('limit', PAGE_SIZE);
+  listQs.set('offset', (currentPage - 1) * PAGE_SIZE);
+
+  try {
+    const [countRes, rows] = await Promise.all([
+      fetchJSON('/domains/count?' + countQs.toString()),
+      fetchJSON('/domains?' + listQs.toString())
+    ]);
+
+    currentTotal = countRes.total ?? 0;
+    const totalPages = Math.max(1, Math.ceil(currentTotal / PAGE_SIZE));
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    tbody.innerHTML = '';
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Tidak ada data untuk filter ini.</td></tr>';
+    } else {
+      rows.forEach((r, i) => {
+        const tech = r.tech_stack ? Object.values(r.tech_stack).join(', ') : '—';
+        const badge = r.resolved
+          ? `<span class="badge">${r.http_status ?? '-'}</span>`
+          : `<span class="badge no">unresolved</span>`;
+        const rowNum = (currentPage - 1) * PAGE_SIZE + i + 1;
+        tbody.innerHTML += `
+          <tr>
+            <td class="muted">${rowNum}</td>
+            <td>${r.domain}</td>
+            <td class="muted">${fmtDateTime(r.first_seen_cert)}</td>
+            <td class="muted">${r.issuer ?? '—'}</td>
+            <td>${badge}</td>
+            <td class="muted">${tech || '—'}</td>
+          </tr>`;
+      });
+    }
+
+    document.getElementById('data-total-label').textContent = `Total: ${currentTotal} domain`;
+    document.getElementById('data-page-label').textContent = `Halaman ${currentPage} dari ${totalPages}`;
+    renderPagination(totalPages);
+
+    const rangeLabel = (activeFilters.dateFrom || activeFilters.dateTo)
+      ? `${activeFilters.dateFrom || '...'} → ${activeFilters.dateTo || '...'}`
+      : 'semua tanggal';
+    document.getElementById('data-range-label').textContent = rangeLabel;
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Gagal memuat data.</td></tr>';
+    console.error('Gagal memuat data table:', e);
+  }
+}
+
+function renderPagination(totalPages) {
+  const el = document.getElementById('pagination');
+  el.innerHTML = '';
+
+  const addBtn = (label, page, opts = {}) => {
+    const btn = document.createElement('button');
+    btn.className = 'page-btn' + (opts.active ? ' active' : '');
+    btn.textContent = label;
+    btn.disabled = !!opts.disabled;
+    btn.addEventListener('click', () => {
+      currentPage = page;
+      loadDataTable();
+    });
+    el.appendChild(btn);
+  };
+
+  addBtn('«', 1, { disabled: currentPage === 1 });
+  addBtn('‹', Math.max(1, currentPage - 1), { disabled: currentPage === 1 });
+
+  // Tampilkan maks 7 nomor halaman: sekitar halaman aktif + ellipsis
+  const window_ = 2;
+  let start = Math.max(1, currentPage - window_);
+  let end = Math.min(totalPages, currentPage + window_);
+
+  if (start > 1) {
+    addBtn('1', 1, { active: currentPage === 1 });
+    if (start > 2) {
+      const dots = document.createElement('span');
+      dots.className = 'page-ellipsis';
+      dots.textContent = '…';
+      el.appendChild(dots);
+    }
+  }
+
+  for (let p = start; p <= end; p++) {
+    addBtn(String(p), p, { active: p === currentPage });
+  }
+
+  if (end < totalPages) {
+    if (end < totalPages - 1) {
+      const dots = document.createElement('span');
+      dots.className = 'page-ellipsis';
+      dots.textContent = '…';
+      el.appendChild(dots);
+    }
+    addBtn(String(totalPages), totalPages, { active: currentPage === totalPages });
+  }
+
+  addBtn('›', Math.min(totalPages, currentPage + 1), { disabled: currentPage === totalPages });
+  addBtn('»', totalPages, { disabled: currentPage === totalPages });
+}
+
+function readFiltersFromForm() {
+  activeFilters = {
+    dateFrom: document.getElementById('f-date-from').value,
+    dateTo: document.getElementById('f-date-to').value,
+    tech: document.getElementById('f-tech').value.trim(),
+    resolvedOnly: document.getElementById('f-resolved').value === 'true'
+  };
+}
+
+document.getElementById('btn-apply-filter').addEventListener('click', () => {
+  readFiltersFromForm();
+  currentPage = 1;
+  loadDataTable();
+});
+
+document.getElementById('btn-reset-filter').addEventListener('click', () => {
+  document.getElementById('f-date-from').value = '';
+  document.getElementById('f-date-to').value = '';
+  document.getElementById('f-tech').value = '';
+  document.getElementById('f-resolved').value = 'false';
+  activeFilters = { dateFrom: '', dateTo: '', tech: '', resolvedOnly: false };
+  currentPage = 1;
+  loadDataTable();
+});
+
+document.getElementById('btn-download-txt').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-download-txt');
+  const original = btn.textContent;
+  btn.textContent = 'Menyiapkan...';
+  btn.disabled = true;
+  try {
+    const qs = buildQuery(activeFilters);
+    const res = await fetch('/domains/export?' + qs.toString());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+
+    // Ambil nama file dari header kalau ada, fallback ke default
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="(.+?)"/);
+    const filename = match ? match[1] : 'certwatch_export.txt';
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Gagal download data: ' + e.message);
+    console.error(e);
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+});
+
+loadDataTable();
 </script>
 
 </body>
