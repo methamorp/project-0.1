@@ -1,6 +1,12 @@
-
-
 services:
+  certstream:
+    image: 0rickyy0/certstream-server-go:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    # Endpoint lite stream ada di "/" (path default certstream-server-go),
+    # jadi collector connect ke ws://localhost:8080/
+
   postgres:
     image: postgres:16
     restart: unless-stopped

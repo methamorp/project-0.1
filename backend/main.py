@@ -38,6 +38,45 @@ app = FastAPI(
 )
 
 
+def ensure_schema() -> None:
+    conn = psycopg.connect(PG_DSN, connect_timeout=5)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS domains (
+                    id BIGSERIAL PRIMARY KEY,
+                    domain TEXT NOT NULL UNIQUE,
+                    first_seen_cert TIMESTAMPTZ NOT NULL,
+                    issuer TEXT,
+                    resolved BOOLEAN DEFAULT FALSE,
+                    ip_address INET,
+                    http_status INT,
+                    tech_stack JSONB,
+                    raw_headers JSONB,
+                    site_status TEXT,
+                    site_status_reason TEXT,
+                    content_length INT,
+                    scanned_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
+                ALTER TABLE domains ADD COLUMN IF NOT EXISTS site_status TEXT;
+                ALTER TABLE domains ADD COLUMN IF NOT EXISTS site_status_reason TEXT;
+                ALTER TABLE domains ADD COLUMN IF NOT EXISTS content_length INT;
+                CREATE INDEX IF NOT EXISTS idx_domains_first_seen ON domains (first_seen_cert DESC);
+                CREATE INDEX IF NOT EXISTS idx_domains_tech_stack ON domains USING GIN (tech_stack);
+                CREATE INDEX IF NOT EXISTS idx_domains_resolved ON domains (resolved) WHERE resolved = TRUE;
+                CREATE INDEX IF NOT EXISTS idx_domains_site_status ON domains (site_status);
+                """
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+ensure_schema()
+
+
 def get_conn():
     return psycopg.connect(PG_DSN, row_factory=dict_row)
 
@@ -50,6 +89,9 @@ class DomainOut(BaseModel):
     ip_address: Optional[str] = None
     http_status: Optional[int] = None
     tech_stack: Optional[dict] = None
+    site_status: Optional[str] = None
+    site_status_reason: Optional[str] = None
+    content_length: Optional[int] = None
     scanned_at: Optional[datetime] = None
 
 
@@ -60,7 +102,14 @@ def list_domains(
     tech: Optional[str] = Query(
         None, description="Filter berdasarkan tech, contoh: 'wordpress'"
     ),
-    resolved_only: bool = Query(False, description="Hanya domain yang aktif/resolve"),
+    resolved_only: bool = Query(False, description="Hanya domain yang DNS-nya resolve"),
+    active_only: bool = Query(
+        False,
+        description=(
+            "Hanya domain yang benar-benar berjalan sebagai web normal -- "
+            "buang parked domain, halaman default server, konten kosong, dsb."
+        ),
+    ),
 ):
     """Ambil daftar domain terbaru, urut dari yang paling baru muncul di CT log."""
     conn = get_conn()
@@ -73,6 +122,8 @@ def list_domains(
         params.append(f"%{tech}%")
     if resolved_only:
         query += " AND resolved = TRUE"
+    if active_only:
+        query += " AND site_status = 'active'"
 
     query += " ORDER BY first_seen_cert DESC LIMIT %s OFFSET %s"
     params.extend([limit, offset])
