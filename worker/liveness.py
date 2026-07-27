@@ -108,6 +108,20 @@ def assess_site_activity(http_status: int | None, html: str, headers: dict) -> d
     text = _visible_text(html_lower)
     content_length = len(text)
 
+    if http_status >= 400:
+        for marker in SOFT_404_MARKERS:
+            if marker in html_lower:
+                return {
+                    "status": "soft_404",
+                    "reason": f"HTTP {http_status} + pola '{marker}'",
+                    "content_length": content_length,
+                }
+        return {
+            "status": "http_error",
+            "reason": f"HTTP {http_status} (status error)",
+            "content_length": content_length,
+        }
+
     for marker in DEFAULT_PAGE_MARKERS:
         if marker in html_lower:
             return {

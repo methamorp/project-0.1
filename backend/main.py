@@ -11,6 +11,7 @@ Lalu buka:
     http://localhost:8000/docs
 """
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -36,6 +37,25 @@ app = FastAPI(
     ),
     version="0.1.0",
 )
+
+
+def wait_for_postgres() -> None:
+    """Coba connect berulang kali sebelum nyerah. Tanpa ini, backend akan
+    langsung crash kalau dijalankan sesaat setelah `docker compose up -d`,
+    sebelum container Postgres benar-benar siap menerima koneksi."""
+    for attempt in range(1, 31):
+        try:
+            conn = psycopg.connect(PG_DSN, connect_timeout=5)
+            conn.close()
+            return
+        except psycopg.OperationalError as exc:
+            if attempt == 30:
+                raise RuntimeError(
+                    f"Tidak bisa terhubung ke Postgres ({PG_DSN}) setelah 30x percobaan. "
+                    "Pastikan `docker compose up -d` sudah jalan dan DATABASE_URL di .env benar."
+                ) from exc
+            print(f"Menunggu Postgres ({attempt}/30)...")
+            time.sleep(2)
 
 
 def ensure_schema() -> None:
@@ -74,6 +94,7 @@ def ensure_schema() -> None:
         conn.close()
 
 
+wait_for_postgres()
 ensure_schema()
 
 
